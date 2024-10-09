@@ -1,0 +1,3 @@
+F:/huaweicloud/local_test_kit/cpp/cmake-build-debug/CMakeFiles/cpp.dir
+F:/huaweicloud/local_test_kit/cpp/cmake-build-debug/CMakeFiles/edit_cache.dir
+F:/huaweicloud/local_test_kit/cpp/cmake-build-debug/CMakeFiles/rebuild_cache.dir

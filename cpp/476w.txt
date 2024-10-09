@@ -1,0 +1,1193 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+#include <numeric>
+#include <queue>
+#include <limits>
+#include <unordered_map>
+using namespace std;
+
+int N, P, R, S, K, C, M;
+vector<vector<int>> VMTypes;
+vector<int> RemainVMs;
+int numaCost[2];
+vector<int> PGTYPe;
+
+class VM{
+public:
+    int ID;
+    int PGIndex;
+    int CostSerID;
+    bool WholeSer;
+    int CostC;
+    int CostM;
+    int GroupType;
+    int partition;
+    int numa0;
+    int numa1;
+    VM(int ID, int PGIndex, int CostSerID, bool WholeSer, int CostC, int CostM, int GroupType, int partition){
+        this->ID = ID;
+        this->PGIndex  = PGIndex;
+        this->CostSerID = CostSerID;
+        this->WholeSer = WholeSer;
+        this->CostC = CostC;
+        this->CostM = CostM;
+        this->GroupType = GroupType;
+        this->numa0 = -1;
+        this->numa1 = -1;
+        this->partition = partition;
+    };
+};
+
+unordered_map<int, VM*> VMHash;
+
+class Node{
+public:
+    vector<int> NodeRemainVMs = {};
+    int WholeVM;
+    int CostVMs = 0;
+    vector<int> SonID = {};
+    int ID;
+};
+
+class ServerCluster : public Node{
+public:
+    ServerCluster();
+};
+
+class NetWork : public Node{
+public:
+    explicit NetWork(int ID);
+
+};
+
+class Pod : public Node{
+public:
+    explicit Pod(int ID);
+};
+
+class Rack : public Node{
+public:
+    explicit Rack(int ID);
+};
+
+class Server : public Node{
+public:
+    int c[2] = {C,C};
+    int m[2] = {M,M};
+    explicit Server(int ID);
+    void UpdateResoure();
+    void DelectVm(VM* vm);
+};
+
+
+
+
+vector<NetWork*> NetWorks;
+vector<Pod*> Pods;
+vector<Rack*> Racks;
+vector<Server*> Servers;
+
+ServerCluster ::ServerCluster() {
+    this->ID = 0;
+    this->WholeVM = N*P*R*S;
+    for(int i =0;i<N;i++){
+        this->SonID.emplace_back(i);
+        auto* net = new NetWork(i);
+        NetWorks.emplace_back(net);
+    }
+    for(int i :RemainVMs) this->NodeRemainVMs.emplace_back(i*this->WholeVM);
+}
+
+NetWork ::NetWork(int ID) {
+    this->ID = ID;
+    this->WholeVM = P*R*S;
+    for(int i = ID *P; i<(ID+1)*P; i++){
+        this->SonID.emplace_back(i);
+        auto* pod = new Pod(i);
+        Pods.emplace_back(pod);
+    }
+    for(int i :RemainVMs) this->NodeRemainVMs.emplace_back(i*this->WholeVM);
+}
+
+Pod ::Pod(int ID) {
+    this->ID = ID;
+    this->WholeVM = R*S;
+    for(int i = ID*R; i<(ID+1)*R; i++){
+        this->SonID.emplace_back(i);
+        auto* rack = new Rack(i);
+        Racks.emplace_back(rack);
+    }
+    for(int i :RemainVMs) this->NodeRemainVMs.emplace_back(i*this->WholeVM);
+}
+
+Rack ::Rack(int ID) {
+    this->ID = ID;
+    this->WholeVM = S;
+    for(int i = ID*S; i<(ID+1)*S; i++){
+        this->SonID.emplace_back(i);
+        auto* ser = new Server(i);
+        Servers.emplace_back(ser);
+    }
+    for(int i :RemainVMs) this->NodeRemainVMs.emplace_back(i*this->WholeVM);
+}
+
+Server ::Server(int ID) {
+    this->ID = ID;
+    this->WholeVM = 1;
+    this->NodeRemainVMs = RemainVMs;
+}
+
+
+
+void Terminate(){
+    cout<< -1 <<endl;
+    for(int i: PGTYPe) cout << i << endl;
+    cout << numaCost[0] << "  " << numaCost[1] << endl;
+    for(NetWork* net : NetWorks) cout << net->CostVMs << " " << net->NodeRemainVMs[0] << endl;
+    exit(0);
+}
+
+void UpdateFatherCost(const int& serID, const VM& vm){
+    Rack* rack = Racks[serID / S];
+    Pod* pod = Pods[rack->ID / R];
+    NetWork* net = NetWorks[pod->ID / P];
+    rack->CostVMs += 1;
+    pod->CostVMs += 1;
+    net->CostVMs += 1;
+
+    if(vm.WholeSer){
+        rack->WholeVM -= 1;
+        pod->WholeVM -= 1;
+        net->WholeVM -= 1;
+    }
+    PGTYPe[vm.GroupType] += 1;
+    //cout << vm.ID << ": " << "PG" << vm.PGIndex <<" ";
+    cout << (net->ID +1) << " " << (pod->ID % P + 1) << " " << (rack->ID % R +1) << " " << (serID % S +1)<<" ";
+}
+
+void Server ::UpdateResoure() {
+    vector<int> CopyRemainVMs = this->NodeRemainVMs;
+
+    if(this->WholeVM == 0){
+        fill(this->NodeRemainVMs.begin(), this->NodeRemainVMs.end(), 0);
+    }
+    else{
+        for(int i =0;i<VMTypes.size();i++){
+            const vector<int>& vmType = VMTypes[i];
+            int c0 = this->c[0] / vmType[1];
+            int c1 = this->c[1] / vmType[1];
+            int m0 = this->m[0] / vmType[2];
+            int m1 = this->m[1] / vmType[2];
+            if(vmType[0] == 1){
+                this->NodeRemainVMs[i] = min(c0, m0) + min(c1, m1);
+            }
+            else{
+                this->NodeRemainVMs[i] = min(min(c0, m0), min(c1, m1));
+            }
+        }
+    }
+    Rack* rack = Racks[this->ID / S];
+    Pod* pod = Pods[rack->ID / R];
+    NetWork* net = NetWorks[pod->ID / P];
+
+    for(int i=0; i<this->NodeRemainVMs.size();i++){
+        rack->NodeRemainVMs[i] -= (CopyRemainVMs[i] - this->NodeRemainVMs[i]);
+        pod->NodeRemainVMs[i] -= (CopyRemainVMs[i] - this->NodeRemainVMs[i]);
+        net->NodeRemainVMs[i] -= (CopyRemainVMs[i] - this->NodeRemainVMs[i]);
+    }
+
+}
+
+void Server::DelectVm(VM *vm) {
+    this->CostVMs += 1;
+    if(vm->WholeSer){
+        this->WholeVM = 1;
+        this->NodeRemainVMs = RemainVMs;
+    }
+    else{
+        if(vm->numa0 != -1){
+            this->m[0] += vm->CostM;
+            this->c[0] += vm->CostC;
+        }
+        if(vm->numa1 != -1){
+            this->m[1] += vm->CostM;
+            this->c[1] += vm->CostC;
+        }
+    }
+
+    Rack* rack = Racks[this->ID / S];
+    Pod* pod = Pods[rack->ID / R];
+    NetWork* net = NetWorks[pod->ID / P];
+
+    rack->CostVMs -= 1;
+    pod->CostVMs -= 1;
+    net->CostVMs -= 1;
+
+    if(vm->WholeSer){
+        rack->WholeVM += 1;
+        pod->WholeVM += 1;
+        net->WholeVM += 1;
+    }
+
+    this->UpdateResoure();
+
+
+
+}
+
+void create_vms(const vector<int>& store, int& vm_type, const int* indexes,  int PGIndex, int GroupType, unordered_map<int, int>* Index_Par = nullptr , bool wholeSer = false){
+    int numa = VMTypes[vm_type][0];
+    int costC = VMTypes[vm_type][1];
+    int costM = VMTypes[vm_type][2];
+    for(int i =0; i<store.size(); i++){
+        int serID = store[i];
+        int VmID = indexes[i];
+        Server* ser = Servers[serID];
+        ser->CostVMs += 1;
+
+
+
+        VM* vm = new VM(VmID, PGIndex,serID, wholeSer, costC, costM, GroupType, GroupType == 6 ? (*Index_Par)[VmID] : -1);
+        VMHash[VmID] = vm;
+        UpdateFatherCost(serID, *vm);
+        if(wholeSer){
+            ser->WholeVM -= 1;
+            cout << "1 2 0" << endl;
+            ser->UpdateResoure();
+            continue;
+        }
+//        else{
+//            if(numa==1){
+//                numaCost[0] += 1;
+//                if(ser->c[0] >= vm->CostC && ser->m[0] >= vm->CostM){
+//                    if(ser->c[1] >= vm->CostC && ser->m[1] >= vm->CostM){
+//                        if(ser->c[1] > ser->c[0]){
+//                            cout << 2;
+//                            ser->c[1] -= vm->CostC;
+//                            ser->m[1] -= vm->CostM;
+//                            vm->numa1 = 1;
+//                        }
+//                        else{
+//                            cout << 1;
+//                            ser->c[0] -= vm->CostC;
+//                            ser->m[0] -= vm->CostM;
+//                            vm->numa0 = 1;
+//                        }
+//                    }
+//                    else{
+//                        cout << 1;
+//                        ser->c[0] -= vm->CostC;
+//                        ser->m[0] -= vm->CostM;
+//                        vm->numa0 = 1;
+//                    }
+//
+//                }
+//                else{
+//                    cout << 2;
+//                    ser->c[1] -= vm->CostC;
+//                    ser->m[1] -= vm->CostM;
+//                    vm->numa1 = 1;
+//                }
+//            }
+//            else{
+//                numaCost[1] += 1;
+//                cout << "1 2";
+//                ser->c[0] -= vm->CostC;
+//                ser->c[1] -= vm->CostC;
+//                ser->m[0] -= vm->CostM;
+//                ser->m[1] -= vm->CostM;
+//                vm->numa0 = 1;
+//                vm->numa1 = 1;
+//            }
+//        }
+
+        else{
+            if(numa==1){
+                numaCost[0] += 1;
+                if(ser->c[0] >= vm->CostC && ser->m[0] >= vm->CostM){
+                    cout << 1;
+                    ser->c[0] -= vm->CostC;
+                    ser->m[0] -= vm->CostM;
+                    vm->numa0 = 1;
+                }
+                else{
+                    cout << 2;
+                    ser->c[1] -= vm->CostC;
+                    ser->m[1] -= vm->CostM;
+                    vm->numa1 = 1;
+                }
+            }
+            else{
+                numaCost[1] += 1;
+                cout << "1 2";
+                ser->c[0] -= vm->CostC;
+                ser->c[1] -= vm->CostC;
+                ser->m[0] -= vm->CostM;
+                ser->m[1] -= vm->CostM;
+                vm->numa0 = 1;
+                vm->numa1 = 1;
+            }
+        }
+
+
+
+        if(GroupType == 6) cout << " " << vm->partition <<endl;
+        else cout << " 0" << endl;
+
+        if(i == store.size()-1 || serID != store[i+1] ){
+            ser->UpdateResoure();
+        }
+    }
+
+}
+
+
+
+
+
+
+
+class PG{
+public:
+    virtual void VMCreation(int nums, int vm_type, int *indexed, int PGIndex){};
+    virtual void VMDeletion(VM* vm){};
+};
+
+class PG0 : public PG{
+public:
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+class PG1 : public PG{
+public:
+    int selfRackId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+class PG2 : public PG{
+public:
+    int selfPodId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+class PG3 : public PG{
+public:
+    int selfNetId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+class PG4 : public PG{
+public:
+    unordered_set<int> CostSerID;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+class PG5 : public PG{
+public:
+    unordered_set<int> CostRackID;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+struct ParNums {
+    int par;
+    int nums;
+
+    // 构造函数
+    ParNums(int par, int num) : par(par), nums(num) {}
+
+    // 重载小于运算符，定义优先级
+    bool operator<(const ParNums& other) const {
+        if(nums == other.nums) return par < other.par;
+        else return nums > other.nums; // 使用大于号表示高优先级的元素在队列前面
+    }
+};
+
+
+class PG6 : public PG{
+public:
+
+    unordered_map<int, int> RackID_Par;
+    unordered_map<int, int> Rack_nums;
+    priority_queue<ParNums> Par_Nums;
+    unordered_map<int, int> Par_Index;
+    unordered_map<int, vector<int>> Par_RackID;
+
+    int par;
+
+    explicit PG6(int par){
+        this->par = par;
+        for(int i = 1;i <= par;i++){
+            if(this->par == 1)  this->Par_Nums.emplace(0,0);
+            else this->Par_Nums.emplace(i,0);
+        }
+    };
+
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+int getOrDefault(unordered_map<int, int>& map, int goal, int res = -1){
+    if(map.find(goal) == map.end()) return res;
+    else return map[goal];
+}
+
+bool PriorityQueueMoreThanOne(priority_queue<ParNums> q) {
+    int min_P = -1;
+    int max_P = -1;
+    while (!q.empty()) {
+        const ParNums temp = q.top();
+        q.pop();
+        // cout << "par: " << temp.par << "nums: " << temp.nums << endl;
+        if(min_P == -1 || temp.nums < min_P) {
+            min_P = temp.nums;
+        }
+        if(max_P == -1 || temp.nums > max_P) {
+            max_P = temp.nums;
+        }
+    }
+    return max_P - min_P > 1;
+}
+
+
+ParNums getRandomParNum(priority_queue<ParNums>& Par_Nums, unordered_map<int, int>& Par_Index){
+    vector<ParNums> vec;
+    ParNums res = Par_Nums.top();
+    int num = -1;
+    float t = -1;
+    while(!Par_Nums.empty()){
+        ParNums p = Par_Nums.top();
+        Par_Nums.pop();
+        if(num == -1) num = p.nums;
+        if(p.nums != num) {
+            Par_Nums.push(p);
+            break;
+        }
+
+
+        float temp = (float)Par_Index[p.par]/((float)Par_Index.size()+(float)0.1);
+        if(temp >= t){
+            if(t != -1) vec.emplace_back(res);
+            res = p;
+            t = temp;
+            continue;
+        }
+        vec.emplace_back(p);
+    }
+
+    for(ParNums p : vec) Par_Nums.push(p);
+
+    return res;
+}
+
+
+
+
+void PG6::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    vector<int> store;
+    unordered_map<int, int> costSer;
+    unordered_map<int, int> Index_Par;
+
+
+
+
+
+
+
+
+    while(true){
+
+        bool success = false;
+        ParNums parAndNums = getRandomParNum(this->Par_Nums, this->Par_Index);
+        // ParNums parAndNums = this->Par_Nums.top();
+        // this->Par_Nums.pop();
+        vector<int>& RacksID = this->Par_RackID[parAndNums.par];
+
+
+        for(int& rID : RacksID){
+            Rack* rack =Racks[rID];
+            if(rack->NodeRemainVMs[vm_type] == 0) continue;
+            for(int& serID : rack->SonID){
+                Server* ser =Servers[serID];
+                if(ser->NodeRemainVMs[vm_type]- costSer[serID] == 0) continue;
+                Index_Par[indexed[store.size()]] = parAndNums.par;
+                this->Par_Index[parAndNums.par] = getOrDefault(this->Par_Index, parAndNums.par, 0) + indexed[store.size()];
+                this->Rack_nums[rack->ID] = getOrDefault(this->Rack_nums, rack->ID, 0) + 1;
+                store.emplace_back(ser->ID);
+                int temp =  getOrDefault(costSer, serID);
+                if(temp == -1) costSer[serID] = 1;
+                else costSer[serID] = temp + 1;
+                // this->RackID_Par[rack->ID] = parAndNums.par;
+                success = true;
+                break;
+            }
+            if(success) break;
+        }
+
+        if(store.size() < nums && !success){
+
+//            vector<Rack*> sortList;
+//            for(Rack* rack : Racks) {
+//                if(rack->NodeRemainVMs[vm_type] == 0) continue;
+//                sortList.emplace_back(rack);
+//            }
+//
+//            sort(sortList.begin(), sortList.end(), [vm_type](const Rack* a, const Rack* b) {
+//                return a->NodeRemainVMs[vm_type] < b->NodeRemainVMs[vm_type];
+//            });
+//
+//
+//
+//
+//
+//
+            unordered_set<int> FullRack;
+            //for(Rack* rack : sortList){
+            for(Rack* rack : Racks){
+                if(rack->NodeRemainVMs[vm_type] == 0  || FullRack.find(rack->ID) != FullRack.end()) continue;
+                int temp = getOrDefault(RackID_Par,rack->ID);
+                if(temp != -1 && temp != parAndNums.par) continue;
+                bool fullRack = true;
+                for(int& serID : rack->SonID){
+                    Server* ser = Servers[serID];
+                    if(ser->NodeRemainVMs[vm_type] - getOrDefault(costSer, serID, 0) <= 0 ) continue;
+                    fullRack = false;
+                    Index_Par[indexed[store.size()]] = parAndNums.par;
+                    this->Par_Index[parAndNums.par] = getOrDefault(this->Par_Index, parAndNums.par, 0) + indexed[store.size()];
+                    store.emplace_back(ser->ID);
+                    this->Rack_nums[rack->ID] = getOrDefault(this->Rack_nums, rack->ID, 0) + 1;
+                    int tt =  getOrDefault(costSer, serID);
+                    if(tt == -1) costSer[serID] = 1;
+                    else costSer[serID] = tt + 1;
+                    this->RackID_Par[rack->ID] = parAndNums.par;
+                    this->Par_RackID[parAndNums.par].emplace_back(rack->ID);
+                    success = true;
+                    break;
+                }
+                if(fullRack) FullRack.insert(rack->ID);
+                if(success) break;
+            }
+        }
+
+        if(!success) Terminate();
+
+        parAndNums.nums += 1;
+        Par_Nums.push(parAndNums);
+        if(store.size() == nums) break;
+    }
+
+
+
+    if(PriorityQueueMoreThanOne(Par_Nums)) Terminate();
+
+
+    if(store.size() == nums){
+        create_vms(store, vm_type, indexed, PGIndex, 6, &Index_Par);
+    }
+    else Terminate();
+
+}
+
+void PG6::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    int rackID = ser->ID / S;
+    this->Rack_nums[rackID] -= 1;
+    this->Par_Index[vm->partition] -= vm->ID;
+    if(this->Rack_nums[rackID] == 0){
+        this->RackID_Par.erase(rackID);
+        vector<int>& vec =  this->Par_RackID[vm->partition];
+        vec.erase(remove(vec.begin(), vec.end(), rackID), vec.end());
+    }
+
+    vector<ParNums> vec;
+
+    while(!this->Par_Nums.empty()){
+        ParNums p = this->Par_Nums.top();
+        this->Par_Nums.pop();
+        if(p.par == vm->partition) {
+            p.nums -= 1;
+            this->Par_Nums.push(p);
+            break;
+        }
+        vec.emplace_back(p);
+    }
+
+    for(ParNums p : vec) this->Par_Nums.push(p);
+
+    delete vm;
+}
+
+
+class PG7 : public PG{
+public:
+    unordered_set<int> CostSerID;
+    int selfRackId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+class PG8 : public PG{
+public:
+    unordered_set<int> CostRackID;
+    int selfNetId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+class PG9 : public PG{
+public:
+    int selfNetId = -1;
+    int storeNums = 0;
+    void VMCreation(int nums, int vm_type, int *indexed, int PGIndex) override;
+    void VMDeletion(VM* vm) override;
+};
+
+
+
+
+void PG0::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+
+    // store the ser IDs
+    vector<int> store;
+
+
+    vector<Server*> sortList;
+    sortList.reserve(Servers.size());
+    for(Server* ser: Servers) {
+
+        sortList.emplace_back(ser);
+    }
+
+    sort(sortList.begin(), sortList.end(), [vm_type](const Server* a, const Server* b) {
+        if(a->NodeRemainVMs[vm_type] == b->NodeRemainVMs[vm_type] && numaCost[0] < numaCost[1]*1.5) return Racks[a->ID / S] < Racks[b->ID / S];
+        //if(a->NodeRemainVMs[vm_type] == b->NodeRemainVMs[vm_type] && numaCost[0] < numaCost[1]*1.5) return Racks[a->ID / S] < Racks[b->ID / S];
+        return a->NodeRemainVMs[vm_type] < b->NodeRemainVMs[vm_type];
+    });
+
+    for(Server* ser : sortList){
+        int& acc = ser->NodeRemainVMs[vm_type];
+        if (acc == 0) continue;
+        int n = (int)store.size();
+        for(int j = 0;j< min(ser->NodeRemainVMs[vm_type], nums-n);j++){
+            store.emplace_back(ser->ID);
+        }
+    }
+
+
+
+
+
+
+    if(store.size() == nums) create_vms(store, vm_type, indexed, PGIndex, 0);
+    else Terminate();
+
+}
+
+void PG0::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    delete vm;
+}
+
+
+void PG1::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    if(this->selfRackId == -1){
+        int count = 0;
+        for(Rack* rack : Racks){
+            if(rack->NodeRemainVMs[vm_type] >= count){
+                this->selfRackId = rack->ID;
+                count = rack->NodeRemainVMs[vm_type];
+            }
+        }
+    }
+    vector<int> store;
+    if(this->selfRackId != -1){
+        Rack* rack = Racks[this->selfRackId];
+        for(int serID : rack->SonID){
+            Server* ser = Servers[serID];
+            if(ser->NodeRemainVMs[vm_type] > 0){
+                for(int i = 0;i< min(ser->NodeRemainVMs[vm_type], nums-(int)store.size());i++){
+                    store.emplace_back(ser->ID);
+                }
+            }
+            if(store.size() == nums) break;
+        }
+    }
+
+    if(store.size() == nums) {
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 1);
+    }
+    else Terminate();
+}
+
+void PG1::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->storeNums -= 1;
+    if(this->storeNums == 0) this->selfRackId = -1;
+    delete vm;
+}
+
+void PG2::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    vector<int> store;
+    if(this->selfPodId == -1){
+        for(Pod* pod : Pods){
+            if(pod->CostVMs == 0){
+                this->selfPodId = pod->ID;
+                break;
+            }
+        }
+    }
+    if(this->selfPodId != -1){
+        int start = this->selfPodId*R*S;
+        int end = (this->selfPodId+1)*R*S;
+        for(int i =start; i<end; i++) store.emplace_back(i);
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 2, nullptr, true);
+    }
+    else Terminate();
+
+}
+
+void PG2::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->storeNums -= 1;
+    if(this->storeNums == 0) this->selfPodId = -1;
+    delete vm;
+}
+
+void PG3::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    if(this->selfNetId == -1){
+        int count = 0;
+        for(NetWork* net : NetWorks){
+            if(net->NodeRemainVMs[vm_type] >= count){
+                this->selfNetId = net->ID;
+                count = net->NodeRemainVMs[vm_type];
+            }
+        }
+    }
+    vector<int> store;
+    if(this->selfNetId != -1){
+        int start = this->selfNetId * P * R * S;
+        int end = (this->selfNetId+1) * P * R * S;
+        //       vector<Server*> sortList;
+        //       for(int i = start; i<end; i++) sortList.emplace_back(Servers[i]);
+
+//        sort(sortList.begin(), sortList.end(), [vm_type](const Server* a, const Server* b) {
+//            return a->NodeRemainVMs[vm_type] < b->NodeRemainVMs[vm_type];
+//        });
+//
+//        for(Server* ser : sortList){
+//            int& acc = ser->NodeRemainVMs[vm_type];
+//            if (acc == 0) continue;
+//            int n = (int)store.size();
+//            for(int j = 0;j< min(ser->NodeRemainVMs[vm_type], nums-n);j++){
+//                store.emplace_back(ser->ID);
+//            }
+//        }
+
+        for(int i = start; i<end; i++){
+            Server* ser = Servers[i];
+            int& acc = ser->NodeRemainVMs[vm_type];
+            if (acc == 0) continue;
+            int n = (int)store.size();
+            for(int j = 0;j< min(ser->NodeRemainVMs[vm_type], nums-n);j++){
+                store.emplace_back(ser->ID);
+            }
+        }
+    }
+    if(store.size() == nums) {
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 3);
+    }
+    else Terminate();
+}
+
+void PG3::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->storeNums -= 1;
+    if(this->storeNums == 0) this->selfNetId = -1;
+    delete vm;
+}
+
+void PG4::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    vector<int> store;
+
+    vector<Server*> sortList;
+    sortList.reserve(Servers.size());
+    for(Server* ser: Servers) sortList.emplace_back(ser);
+
+    sort(sortList.begin(), sortList.end(), [vm_type](const Server* a, const Server* b) {
+        if(a->NodeRemainVMs[vm_type] == b->NodeRemainVMs[vm_type] && numaCost[0] < numaCost[1]*1.5) return a->ID < b->ID;
+        return a->NodeRemainVMs[vm_type] < b->NodeRemainVMs[vm_type];
+    });
+
+    for(Server* ser : sortList){
+        if(this->CostSerID.find(ser->ID) != this->CostSerID.end()) continue;
+        if(ser->NodeRemainVMs[vm_type] > 0){
+            store.emplace_back(ser->ID);
+            this->CostSerID.insert(ser->ID);
+        }
+        if(store.size() == nums) break;
+    }
+
+
+
+//    for(Server* ser : Servers){
+//        if(this->CostSerID.find(ser->ID) != this->CostSerID.end()) continue;
+//        if(ser->NodeRemainVMs[vm_type] > 0){
+//            store.emplace_back(ser->ID);
+//            this->CostSerID.insert(ser->ID);
+//        }
+//        if(store.size() == nums) break;
+//    }
+    if(store.size() == nums) create_vms(store, vm_type, indexed, PGIndex, 4);
+    else Terminate();
+}
+
+void PG4::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->CostSerID.erase(ser->ID);
+    delete vm;
+}
+
+void PG5::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    vector<int> store;
+    for(Rack* rack : Racks){
+        if(rack->NodeRemainVMs[vm_type] <= 0 || this->CostRackID.find(rack->ID) != this->CostRackID.end()) continue;
+        for(int serID : rack->SonID) {
+            Server* ser = Servers[serID];
+            if (ser->NodeRemainVMs[vm_type] > 0) {
+                store.emplace_back(ser->ID);
+                this->CostRackID.insert(rack->ID);
+                break;
+            }
+        }
+        if(store.size() == nums) break;
+    }
+    if(store.size() == nums) create_vms(store, vm_type, indexed, PGIndex, 5);
+    else Terminate();
+}
+
+void PG5::VMDeletion(VM *vm) {
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->CostRackID.erase(ser->ID / S);
+    delete vm;
+}
+
+
+
+
+void PG7::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    if(this->selfRackId == -1){
+        int max = 0;
+        for(Rack* rack : Racks){
+            int count = 0;
+            for(int serID : rack->SonID){
+                if(Servers[serID]->NodeRemainVMs[vm_type]>0) count++;
+            }
+            if(count>=max){
+                max = count;
+                this->selfRackId = rack->ID;
+            }
+        }
+    }
+    vector<int> store;
+    if(this->selfRackId != -1){
+        Rack* rack = Racks[this->selfRackId];
+
+        vector<Server*> sortList;
+        sortList.reserve(Servers.size());
+        for(int serID : rack->SonID) sortList.emplace_back(Servers[serID]);
+
+        sort(sortList.begin(), sortList.end(), [vm_type](const Server* a, const Server* b) {
+            if(a->NodeRemainVMs[vm_type] == b->NodeRemainVMs[vm_type] && numaCost[0] < numaCost[1]*1.5) return Racks[a->ID / S] < Racks[b->ID / S];
+            return a->NodeRemainVMs[vm_type] < b->NodeRemainVMs[vm_type];
+        });
+
+        for(Server* ser : sortList){
+            if(this->CostSerID.find(ser->ID) != this->CostSerID.end()) continue;
+
+            if(ser->NodeRemainVMs[vm_type] > 0){
+                store.emplace_back(ser->ID);
+                this->CostSerID.insert(ser->ID);
+            }
+            if(store.size() == nums) break;
+        }
+    }
+    if(store.size() == nums) {
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 7);
+    }
+    else Terminate();
+}
+
+void PG7::VMDeletion(VM *vm) {
+    this->storeNums -= 1;
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->CostSerID.erase(ser->ID);
+    if(this->storeNums == 0) this->selfRackId = -1;
+    delete vm;
+}
+
+
+void PG8::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    if(this->selfNetId == -1){
+        int max = 0;
+        for(NetWork* net : NetWorks){
+            int count = 0;
+            for(int& podID : net->SonID){
+                for(int& rackID : Pods[podID]->SonID){
+                    if(Racks[rackID]->NodeRemainVMs[vm_type]>0) count++;
+                }
+            }
+
+            if(count>=max){
+                max = count;
+                this->selfNetId = net->ID;
+            }
+        }
+    }
+    vector<int> store;
+    if(this->selfNetId != -1){
+        NetWork* net = NetWorks[this->selfNetId];
+//        int start = this->selfNetId * P * R ;
+//        int end = (this->selfNetId+1) * P * R ;
+//
+//            vector<Rack*> sortList;
+//            for(int i = start; i<end; i++) {
+//                Rack* rack = Racks[i];
+//                if(rack->NodeRemainVMs[vm_type] == 0) continue;
+//                sortList.emplace_back(rack);
+//            }
+//
+//            sort(sortList.begin(), sortList.end(), [vm_type](const Rack* a, const Rack* b) {
+//                return a->NodeRemainVMs[vm_type] > b->NodeRemainVMs[vm_type];
+//            });
+//
+//            for(Rack* rack : sortList){
+//                if(this->CostRackID.find(rack->ID) != this->CostRackID.end()) continue;
+//                for(int serID : rack->SonID){
+//                    if(Servers[serID]->NodeRemainVMs[vm_type]>0){
+//                        store.emplace_back(serID);
+//                        this->CostRackID.insert(rack->ID);
+//                        break;
+//                    }
+//                }
+//                if(store.size() == nums) break;
+//            }
+
+
+
+
+        for(int& PodID : net->SonID){
+            for(int& rackID : Pods[PodID]->SonID){
+                if(this->CostRackID.find(rackID) != this->CostRackID.end()) continue;
+                Rack* rack = Racks[rackID];
+                for(int serID : rack->SonID){
+                    if(Servers[serID]->NodeRemainVMs[vm_type]>0){
+                        store.emplace_back(serID);
+                        this->CostRackID.insert(rackID);
+                        break;
+                    }
+                }
+                if(store.size() == nums) break;
+            }
+            if(store.size() == nums) break;
+        }
+    }
+    if(store.size() == nums){
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 8);
+    }
+    else Terminate();
+}
+
+
+
+void PG8::VMDeletion(VM *vm) {
+    this->storeNums -= 1;
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    this->CostRackID.erase(ser->ID / S);
+    if(this->storeNums == 0) this->selfNetId = -1;
+    delete vm;
+}
+
+void PG9::VMCreation(int nums, int vm_type, int *indexed, int PGIndex) {
+    if(this->selfNetId == -1){
+        int max = 0;
+        for(NetWork* net : NetWorks){
+            int count = 0;
+            for(int podId : net->SonID){
+                if(Pods[podId]->CostVMs==0) count++;
+            }
+            if(count >= max){
+                max = count;
+                this->selfNetId = net->ID;
+            }
+        }
+    }
+    vector<int> store;
+    if(this->selfNetId != -1){
+        for(int podID : NetWorks[selfNetId]->SonID){
+            if(Pods[podID]->CostVMs != 0) continue;
+            for(int i = podID*R*S;i<(podID+1)*R*S;i++) store.emplace_back(i);
+            if(store.size() == nums) break;
+        }
+    }
+    if(store.size() == nums) {
+        this->storeNums += nums;
+        create_vms(store, vm_type, indexed, PGIndex, 9, nullptr, true);
+    }
+    else Terminate();
+}
+
+void PG9::VMDeletion(VM *vm) {
+    this->storeNums -= 1;
+    Server* ser = Servers[vm->CostSerID];
+    ser->DelectVm(vm);
+    VMHash.erase(vm->ID);
+    if(this->storeNums == 0) this->selfNetId = -1;
+    delete vm;
+}
+
+
+unordered_map<int, PG*> PGHash;
+
+
+
+PG* CreatePG(const int& PGType, const int& par){
+    switch (PGType) {
+        case 0: return new PG0();
+        case 1: return new PG1();
+        case 2: return new PG2();
+        case 3: return new PG3();
+        case 4: return new PG4();
+        case 5: return new PG5();
+        case 6: return new PG6(par);
+        case 7: return new PG7();
+        case 8: return new PG8();
+        case 9: return new PG9();
+        default: return nullptr;
+    }
+}
+
+
+
+void UpdateRemainVms(){
+    for(vector<int>vm : VMTypes){
+        int c = C / vm[1];
+        int m = M / vm[2];
+        int acc = min(c,m);
+        if (vm[0] == 1) RemainVMs.push_back(acc*2);
+        else RemainVMs.push_back(acc);
+    }
+}
+
+
+int main() {
+
+
+
+
+
+    cin >> N >> P >> R >> S >> K >> C >> M;
+    int NumsOfType;
+    cin >> NumsOfType;
+
+    // get the VMTypes
+    for(int i=0;i< NumsOfType;i++){
+        int n, c, m;
+        cin >> n >> c >> m;
+        PGTYPe.push_back(0);
+        VMTypes.push_back({n,c,m});
+    }
+
+    // Update RemainVms
+    UpdateRemainVms();
+
+    // Make a ServerCluster
+    ServerCluster();
+
+
+    // Deal the Request
+    int RequestType;
+    while(true){
+        cin >> RequestType;
+        if (RequestType == 1){
+            int PGIndex, PGType, par;
+            cin >> PGIndex >> PGType >> par;
+            PGHash[PGIndex] =  CreatePG(PGType, par);
+        }
+        else if(RequestType == 2){
+            int Nums, vm_type, PGIndex;
+            cin >> Nums >> vm_type >> PGIndex;
+
+            int indexes[Nums];
+            for(int i =0;i<Nums;i++){
+                cin >> indexes[i];
+            }
+            vm_type -= 1;
+            PG* pg = PGHash[PGIndex];
+            pg->VMCreation(Nums,vm_type,indexes,PGIndex);
+        }
+        else if(RequestType == 3){
+            int num;
+            cin >> num;
+            for(int i =0;i<num;i++){
+                int index;
+                cin >> index;
+                VM* vm = VMHash[index];
+                PG* pg = PGHash[vm->PGIndex];
+                pg->VMDeletion(vm);
+            }
+        }
+        else Terminate();
+    }
+
+
+    return 0;
+}
